@@ -1,4 +1,4 @@
-from MikrotikApi import ApiRos
+from .MikrotikApi import ApiRos
 import socket
 import time
 

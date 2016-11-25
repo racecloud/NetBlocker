@@ -1,4 +1,4 @@
-from BaseLogScanner import BaseLogScanner
+from .BaseLogScanner import BaseLogScanner
 
 class MailLogScanner (BaseLogScanner):
     def __init__(self, config_section):

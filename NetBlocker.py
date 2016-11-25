@@ -1,7 +1,6 @@
-import MailLogScanner
-import AbuseIPDB
+from nb import AbuseIPDB, FirewallManager, MikrotikApi
+from nb.scanners import MailLogScanner
 import ipaddress
-import FirewallManager
 import configparser
 import sys
 
