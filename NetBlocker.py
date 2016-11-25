@@ -6,91 +6,98 @@ import configparser
 import sys
 
 
-config = None
-suspiciousIPs = {}
+def address_in_network(ip, net):
+    ip = ipaddress.ip_address(ip)
+    network = ipaddress.ip_network(net)
+    return ip in network
 
 
-def addressInNetwork(ip, net):
-   ipaddr = ipaddress.ip_address(ip)
-   network = ipaddress.ip_network(net)
-   return ipaddr in network
-
-
-def addressInWhiteList(ip, whiteList):
-    for net in whiteList:
-        if addressInNetwork(ip, net):
+def address_in_whitelist(ip, whitelist):
+    for net in whitelist:
+        if address_in_network(ip, net):
             return True
     return False
 
 
 def main():
+    # ------------
     # Read configuration
     config_file = 'config.ini'
     if len(sys.argv) > 1:
         config_file = sys.argv[1]
     config = configparser.ConfigParser()
-    print ("Reading config file {0}".format(config_file))
+    print("Reading config file {0}".format(config_file))
     config.read(config_file)
 
     # defines how many days an ip address should stay in firewall before re-checking against public databases
-    JailTime = config.getint('general', 'JailTime')
+    jail_time = config.getint('general', 'JailTime')
     # number of attempts before we even consider blocking this IP
-    NumberOfAttemptsAllowed = config.getint('general', 'NumberOfAttemptsAllowed')
+    number_of_attempts_allowed = config.getint('general', 'NumberOfAttemptsAllowed')
     # number of attempts when we don't care if AbuseIPDB doesn't list it
-    NumberOfAttemptsForceBlock = config.getint('general', 'NumberOfAttemptsForceBlock')
+    number_of_attempts_force_block = config.getint('general', 'NumberOfAttemptsForceBlock')
 
     tmp = config.get('general', 'whitelist')
-    WhiteListNetworks = []
+    white_list_networks = []
     if tmp:
-        WhiteListNetworks = str.split(tmp)
+        white_list_networks = str.split(tmp)
 
-    # Stage 1: Gather list of abuse IPs
-    print('Read logs from srv1')
-    srv1MailScanner = MailLogScanner.MailLogScanner('srv1')
-    srv1MailIPs = srv1MailScanner.getSuspiciousIPs()
-
-    # Stage 2: Setup connection to mikrotik router, get list of already marked as abusive IPs
-    firewall = FirewallManager.FirewallManager(config)
-    previouslyBlockedIPs = firewall.getBlockedIPs()
-
-    # Stage 3: Prepare some other stuff like the connection to the AbuseIPDB
-    abipdb = AbuseIPDB.AbuseIPDB(config.get('AbuseIPDB', 'key'))
-
-    # Stage 4: Scan the abusive IPs,
-    # - check if they already are firewalled, if yes - update timestamp; if no - check with abuseIPDB
-    print('Scan list of suspicios addresses')
-    for ip in srv1MailIPs:
-        numberOfAttempts = srv1MailIPs[ip]
-        if addressInWhiteList(ip, WhiteListNetworks):
-            print ('Ignore ' + ip + ': in whitelist network (' + str(numberOfAttempts) + ' attempts)')
+    # ------------
+    # Contact the servers, gather list of abuse IPs
+    offensive_ips = {}
+    config_sections = config.sections()
+    for section_name in config_sections:
+        if section_name == 'general':
             continue
-        # print('IP ' + ip + ' seen ' + str(srv1MailIPs[ip]) + ' times ')
-        if numberOfAttempts > NumberOfAttemptsAllowed:
+        section_config = config[section_name]
+        server_type = section_config.get('type')
+        print('Reading ips from server ' + section_config.get('address') + ', type ' + server_type)
+        if server_type == 'mail':
+            scanner = MailLogScanner.MailLogScanner(section_config)
+            new_ips = scanner.getSuspiciousIPs()
+            # Note that the scanners give us a dictionary ip:weight so we have to combine and sum them
+            offensive_ips = {k: offensive_ips.get(k, 0) + new_ips.get(k, 0) for k in set(offensive_ips) | set(new_ips)}
+
+    # ------------
+    # Setup connection to mikrotik router, prepare public databases access, etc
+    firewall = FirewallManager.FirewallManager(config)
+    abuse_ip_db = AbuseIPDB.AbuseIPDB(config.get('general', 'AbuseIPDBAPIKey'))
+
+    # ------------
+    # The main algorithm - check the list of the addresses against the currently blocked and public databases and act
+    print('Scan list of suspicious addresses')
+    for ip in offensive_ips:
+        number_of_violations = offensive_ips[ip]
+        if address_in_whitelist(ip, white_list_networks):
+            print('Ignore ' + ip + ': in whitelist network (' + str(number_of_violations) + ' attempts)')
+            continue
+        # print('IP ' + ip + ' seen ' + str(gatheredIPs[ip]) + ' times ')
+        if number_of_violations > number_of_attempts_allowed:
             # Check if already blocked
             if firewall.isIPBlocked(ip):
-                print('Ignore ' + ip + ': already blocked (' + str(numberOfAttempts) + ' attempts)')
+                print('Ignore ' + ip + ': already blocked (' + str(number_of_violations) + ' attempts)')
                 continue
 
-            if abipdb.isIPReported(ip, days=JailTime):
-                print('Block ' + ip + ': AbuseIPDB says it must be blocked (' + str(numberOfAttempts) + ' attempts)')
+            if abuse_ip_db.isIPReported(ip, days=jail_time):
+                print('Block ' + ip + ': AbuseIPDB says it must be blocked (' + str(number_of_violations) + ' attempts)')
                 firewall.blockIP(ip)
             else:
-                if numberOfAttempts > NumberOfAttemptsForceBlock:
+                if number_of_violations > number_of_attempts_force_block:
                     print('Block ' + ip + ': AbuseIPDB doesn\'t list it, but number of attempts '
-                                          '(' + str(numberOfAttempts) + ') is above force threshold')
+                                          '(' + str(number_of_violations) + ') is above force threshold')
                     firewall.blockIP(ip)
                 else:
-                    print('Ignore ' + ip + ': AbuseIPDB doesn\'t list it and attempts (' + str(numberOfAttempts) +
+                    print('Ignore ' + ip + ': AbuseIPDB doesn\'t list it and attempts (' + str(number_of_violations) +
                           ') below force threshold')
         else:
-            print('Ignore ' + ip + ': not enough attempts (' + str(numberOfAttempts) + ')')
+            print('Ignore ' + ip + ': not enough attempts (' + str(number_of_violations) + ')')
 
-    # Stage 5: check entries that are very old in our firewall if we should restore them
-    expiredIPs = firewall.getIPsOlderThan(JailTime * 24 * 60 * 60)
-    print('Check already-blocked ips (' + str(len(expiredIPs)) + ')')
-    for ip in expiredIPs:
+    # ------------
+    # Check entries that are very old in our firewall if we may restore them.
+    expired_ips = firewall.getIPsOlderThan(jail_time * 24 * 60 * 60)
+    print('Check already-blocked ips if they have expired (' + str(len(expired_ips)) + ')')
+    for ip in expired_ips:
         # print('Re-check expired address ' + ip)
-        if abipdb.isIPReported(ip, days=JailTime):
+        if abuse_ip_db.isIPReported(ip, days=jail_time):
             print('KeepBlocked ' + ip + ': AbuseIPDB says this IP should still be blocked')
             firewall.updateBlockedIPDate(ip)
         else:

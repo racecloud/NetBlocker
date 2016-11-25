@@ -5,9 +5,9 @@ import time
 
 class FirewallManager:
     def __init__(self, config, addressListName='Complete Block'):
-        self.ip = config.get('firewall', 'ip')
-        self.username = config.get('firewall', 'username')
-        self.password = config.get('firewall', 'password')
+        self.ip = config.get('general', 'firewallip')
+        self.username = config.get('general', 'firewallusername')
+        self.password = config.get('general', 'firewallpassword')
         self.addressListName = addressListName
         self.dateCommentPrefix = 'Date: '
         self.dateCommentSuffix = ';'

@@ -3,12 +3,12 @@ import gzip
 
 
 class BaseLogScanner:
-    def __init__(self, ip):
-        self.ip = ip
+    def __init__(self, config_section):
+        self.ip = config_section.get('address')
         self.ssh_client = None
         self.sftp_client = None
-        self.scan_dir = '/var/log'
-        self.files_prefix = 'mail.log'
+        self.scan_dir = config_section.get('logdir')
+        self.files_prefix = config_section.get('filesprefix')
         self.ips_list = {}
 
     def getSuspiciousIPs(self):

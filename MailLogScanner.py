@@ -1,11 +1,12 @@
 from BaseLogScanner import BaseLogScanner
 
 class MailLogScanner (BaseLogScanner):
-    def __init__(self, ip):
-        BaseLogScanner.__init__(self, ip)
+    def __init__(self, config_section):
+        BaseLogScanner.__init__(self, config_section)
+        self.search_string = config_section.get('searchstring')
 
     def checkFileLine(self, line):
-        if 'SASL' in str(line):
+        if self.search_string in str(line):
             # find the ip address
             cmp = line.split()
             if len(cmp) >= 7:
@@ -19,13 +20,13 @@ class MailLogScanner (BaseLogScanner):
                     self.ips_list[ip] += 1
 
         return False
-
-
-def main():
-    msc = MailLogScanner('srv1')
-    ips = msc.getSuspiciousIPs()
-    print(ips)
-
-
-if __name__ == '__main__':
-    main()
+#
+#
+# def main():
+#     msc = MailLogScanner('srv1')
+#     ips = msc.getSuspiciousIPs()
+#     print(ips)
+#
+#
+# if __name__ == '__main__':
+#     main()
