@@ -15,9 +15,14 @@ This is something I implement for my personal use and mostly out of curiosity fo
  * The machine that runs the scripts must have ssh access to the servers using rsa keys, support for user/password authentication not implemented
  * Access to the MikroTik is with username/password. Also make sure the API is enabled
  
+## Usage
+Create a config.ini file (check the sample provided) and run the NetBlocker.py 
+ 
 ## TODO
-- [ ] List of hosts is not configurable yet
+- [ ] Currently the algorithm just counts number of occurrences of IPs in a log file. Must add support for weights depending on what was in the file
+- [ ] Add support for regular expressions matching in the logs (currently we just search a string)
 - [ ] Add the intended support for zen.spamhaus
 - [ ] Add support for apache access logs (maybe ssh and etc)
 - [ ] Add pid file check so when using cron job we don't have overlaps
-- [ ] Configurable logging, exception handling, etc
+- [ ] Configurable logging
+- [ ] At the moment error handling is minimal at best
