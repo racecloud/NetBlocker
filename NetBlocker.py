@@ -1,4 +1,5 @@
-from nb import AbuseIPDB, FirewallManager, MikrotikApi
+from nb import FirewallManager, MikrotikApi
+from nb.public_dbs import PublicDBs
 from nb.scanners import MailLogScanner
 import ipaddress
 import configparser
@@ -32,7 +33,7 @@ def main():
     jail_time = config.getint('general', 'JailTime')
     # number of attempts before we even consider blocking this IP
     number_of_attempts_allowed = config.getint('general', 'NumberOfAttemptsAllowed')
-    # number of attempts when we don't care if AbuseIPDB doesn't list it
+    # number of attempts when we don't care if public dbs don't list it yet
     number_of_attempts_force_block = config.getint('general', 'NumberOfAttemptsForceBlock')
 
     tmp = config.get('general', 'whitelist')
@@ -41,7 +42,7 @@ def main():
         white_list_networks = str.split(tmp)
 
     # ------------
-    # Contact the servers, gather list of abuse IPs
+    # Contact the servers, gather list of offensive IPs
     offensive_ips = {}
     config_sections = config.sections()
     for section_name in config_sections:
@@ -59,7 +60,7 @@ def main():
     # ------------
     # Setup connection to mikrotik router, prepare public databases access, etc
     firewall = FirewallManager.FirewallManager(config)
-    abuse_ip_db = AbuseIPDB.AbuseIPDB(config.get('general', 'AbuseIPDBAPIKey'))
+    public_dbs_checker = PublicDBs.PublicDBs(config)
 
     # ------------
     # The main algorithm - check the list of the addresses against the currently blocked and public databases and act
@@ -76,16 +77,16 @@ def main():
                 print('Ignore ' + ip + ': already blocked (' + str(number_of_violations) + ' attempts)')
                 continue
 
-            if abuse_ip_db.isIPReported(ip, days=jail_time):
-                print('Block ' + ip + ': AbuseIPDB says it must be blocked (' + str(number_of_violations) + ' attempts)')
+            if public_dbs_checker.isIPReported(ip, days=jail_time):
+                print('Block ' + ip + ': public dbs says it must be blocked (' + str(number_of_violations) + ' attempts)')
                 firewall.blockIP(ip)
             else:
                 if number_of_violations > number_of_attempts_force_block:
-                    print('Block ' + ip + ': AbuseIPDB doesn\'t list it, but number of attempts '
+                    print('Block ' + ip + ': public dbs dont list it, but number of attempts '
                                           '(' + str(number_of_violations) + ') is above force threshold')
                     firewall.blockIP(ip)
                 else:
-                    print('Ignore ' + ip + ': AbuseIPDB doesn\'t list it and attempts (' + str(number_of_violations) +
+                    print('Ignore ' + ip + ': public dbs list it and attempts (' + str(number_of_violations) +
                           ') below force threshold')
         else:
             print('Ignore ' + ip + ': not enough attempts (' + str(number_of_violations) + ')')
@@ -96,11 +97,11 @@ def main():
     print('Check already-blocked ips if they have expired (' + str(len(expired_ips)) + ')')
     for ip in expired_ips:
         # print('Re-check expired address ' + ip)
-        if abuse_ip_db.isIPReported(ip, days=jail_time):
-            print('KeepBlocked ' + ip + ': AbuseIPDB says this IP should still be blocked')
+        if public_dbs_checker.isIPReported(ip, days=jail_time):
+            print('KeepBlocked ' + ip + ': public dbs say this IP should still be blocked')
             firewall.updateBlockedIPDate(ip)
         else:
-            print('UnBlock ' + ip + ': AbuseIPDB says this IP can be safely removed from firewall')
+            print('UnBlock ' + ip + ': public dbs say this IP can be safely removed from firewall')
             firewall.unblockIP(ip)
     print('All done. Good bye!')
 
