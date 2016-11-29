@@ -11,8 +11,10 @@ class AbuseIPDB:
         if response.status_code == 200:
             data = response.json()
             # print(data)
-            return len(data) > 0
+            _listed = len(data) > 0
+            print("AbuseIPDB cneck for {0}: {1}".format(ip, "Listed" if _listed else "Not listed"))
         else:
+            print("AbuseIPDB check for {0}: failed".format(ip))
             return False
 
 # def main():

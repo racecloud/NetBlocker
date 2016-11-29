@@ -31,10 +31,10 @@ def main():
 
     # defines how many days an ip address should stay in firewall before re-checking against public databases
     jail_time = config.getint('general', 'JailTime')
-    # number of attempts before we even consider blocking this IP
-    number_of_attempts_allowed = config.getint('general', 'NumberOfAttemptsAllowed')
-    # number of attempts when we don't care if public dbs don't list it yet
-    number_of_attempts_force_block = config.getint('general', 'NumberOfAttemptsForceBlock')
+    # weight above which we even consider blocking this IP
+    low_weight_threshold = config.getint('general', 'LowWeightThreshold')
+    # weight above which we don't care if public dbs don't list it yet
+    high_weight_threshold = config.getint('general', 'HighWeightThreshold')
 
     tmp = config.get('general', 'whitelist')
     white_list_networks = []
@@ -66,30 +66,31 @@ def main():
     # The main algorithm - check the list of the addresses against the currently blocked and public databases and act
     print('Scan list of suspicious addresses')
     for ip in offensive_ips:
-        number_of_violations = offensive_ips[ip]
+        violations_weight = offensive_ips[ip]
         if address_in_whitelist(ip, white_list_networks):
-            print('Ignore ' + ip + ': in whitelist network (' + str(number_of_violations) + ' attempts)')
+            print('Ignore ' + ip + ': in whitelist network (weight: ' + str(violations_weight) + ')')
             continue
         # print('IP ' + ip + ' seen ' + str(gatheredIPs[ip]) + ' times ')
-        if number_of_violations > number_of_attempts_allowed:
+        if violations_weight > low_weight_threshold:
             # Check if already blocked
             if firewall.isIPBlocked(ip):
-                print('Ignore ' + ip + ': already blocked (' + str(number_of_violations) + ' attempts)')
+                print('Ignore ' + ip + ': already blocked (weight: ' + str(violations_weight) + ')')
                 continue
 
             if public_dbs_checker.isIPReported(ip, days=jail_time):
-                print('Block ' + ip + ': public dbs says it must be blocked (' + str(number_of_violations) + ' attempts)')
+                print('Block ' + ip + ': public DNSBLs list it (weight: ' + str(violations_weight) + ')')
                 firewall.blockIP(ip)
             else:
-                if number_of_violations > number_of_attempts_force_block:
-                    print('Block ' + ip + ': public dbs dont list it, but number of attempts '
-                                          '(' + str(number_of_violations) + ') is above force threshold')
+                # Not listed in our public dbs
+                if violations_weight > high_weight_threshold:
+                    print('Block ' + ip + ': public DNSBLs do not list it, but weight '
+                                          '(' + str(violations_weight) + ') is above force threshold')
                     firewall.blockIP(ip)
                 else:
-                    print('Ignore ' + ip + ': public dbs list it and attempts (' + str(number_of_violations) +
-                          ') below force threshold')
+                    print('Ignore ' + ip + ': public DNSBLs do not list it and weight (' +
+                          str(violations_weight) + ') is still below high threshold')
         else:
-            print('Ignore ' + ip + ': not enough attempts (' + str(number_of_violations) + ')')
+            print('Ignore ' + ip + ': not enough violations (weight: ' + str(violations_weight) + ')')
 
     # ------------
     # Check entries that are very old in our firewall if we may restore them.
